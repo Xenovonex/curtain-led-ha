@@ -1,0 +1,353 @@
+# Home Assistant dashboard: Light Lab
+# Add via Settings -> Dashboards -> New dashboard -> Raw configuration editor -> paste.
+title: Light Lab
+views:
+- title: Light Lab
+  path: light-lab
+  icon: mdi:test-tube
+  cards:
+  - type: markdown
+    content: '## Curtain Light Lab'
+  - type: entities
+    entities:
+    - entity: input_boolean.curtain_power
+      name: Power
+  - type: horizontal-stack
+    cards:
+    - type: button
+      name: Reset
+      tap_action:
+        action: perform-action
+        perform_action: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: 0ae20b01ff
+      icon: mdi:backup-restore
+  - type: markdown
+    content: '### Solid color'
+  - type: entities
+    entities:
+    - entity: input_number.curtain_hue
+      name: Hue
+    - entity: input_number.curtain_bright
+      name: Color brightness
+    - entity: input_number.curtain_white
+      name: White brightness
+  - type: grid
+    columns: 3
+    square: false
+    cards:
+    - type: button
+      name: Red
+      tap_action:
+        action: perform-action
+        perform_action: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: 0ae20b01ff
+      icon: mdi:palette
+    - type: button
+      name: Orange
+      tap_action:
+        action: perform-action
+        perform_action: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: 0ae20b09bf
+      icon: mdi:palette
+    - type: button
+      name: Green
+      tap_action:
+        action: perform-action
+        perform_action: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: 0ae20b51ff
+      icon: mdi:palette
+    - type: button
+      name: Blue
+      tap_action:
+        action: perform-action
+        perform_action: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: 0ae20ba1ff
+      icon: mdi:palette
+    - type: button
+      name: Purple
+      tap_action:
+        action: perform-action
+        perform_action: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: 0ae20ba9ff
+      icon: mdi:palette
+    - type: button
+      name: White
+      tap_action:
+        action: perform-action
+        perform_action: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: 0ae20b00ff
+      icon: mdi:palette
+  - type: markdown
+    content: '### Animations - tap one, then set Speed / Brightness below'
+  - type: grid
+    columns: 4
+    square: false
+    cards:
+    - type: button
+      name: Switch
+      icon: mdi:sync
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 1
+    - type: button
+      name: Rainbow
+      icon: mdi:arrow-bottom-left-thick
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 2
+    - type: button
+      name: Rainbow
+      icon: mdi:arrow-down-thick
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 3
+    - type: button
+      name: Sparse
+      icon: mdi:arrow-bottom-left
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 4
+    - type: button
+      name: Sparse
+      icon: mdi:arrow-right
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 5
+    - type: button
+      name: Blu-Wht
+      icon: mdi:arrow-bottom-left-thick
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 6
+    - type: button
+      name: Cyn-Mag
+      icon: mdi:arrow-bottom-left-thick
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 7
+    - type: button
+      name: R-Y-B
+      icon: mdi:arrow-right-thick
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 8
+    - type: button
+      name: Appear
+      icon: mdi:arrow-right
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 9
+    - type: button
+      name: Line
+      icon: mdi:arrow-right-bold
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 10
+    - type: button
+      name: Line
+      icon: mdi:arrow-down-bold
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 11
+    - type: button
+      name: Beam
+      icon: mdi:arrow-right
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 12
+    - type: button
+      name: Fade
+      icon: mdi:arrow-right
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 13
+    - type: button
+      name: Noise
+      icon: mdi:shimmer
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 14
+    - type: button
+      name: Purple
+      icon: mdi:arrow-right
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 15
+    - type: button
+      name: Collide
+      icon: mdi:arrow-collapse-horizontal
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 16
+    - type: button
+      name: FadeAll
+      icon: mdi:arrow-all
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_anim_id
+        data:
+          value: 17
+  - type: entities
+    entities:
+    - entity: input_number.curtain_anim_speed
+      name: Speed
+    - entity: input_number.curtain_anim_bright
+      name: Brightness
+  - type: markdown
+    content: '### Hearts - tap direction, drag speed + brightness'
+  - type: entities
+    entities:
+    - entity: input_number.curtain_heart_speed
+      name: Heart speed
+    - entity: input_number.curtain_heart_bright
+      name: Heart brightness
+  - type: grid
+    columns: 3
+    square: false
+    cards:
+    - type: button
+      name: ''
+      tap_action:
+        action: none
+    - type: button
+      name: Up
+      icon: mdi:heart
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_heart_dir
+        data:
+          value: 4
+    - type: button
+      name: ''
+      tap_action:
+        action: none
+    - type: button
+      name: Left
+      icon: mdi:heart
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_heart_dir
+        data:
+          value: 2
+    - type: button
+      name: In place
+      icon: mdi:heart
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_heart_dir
+        data:
+          value: 0
+    - type: button
+      name: Right
+      icon: mdi:heart
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_heart_dir
+        data:
+          value: 3
+    - type: button
+      name: ''
+      tap_action:
+        action: none
+    - type: button
+      name: Down
+      icon: mdi:heart
+      tap_action:
+        action: perform-action
+        perform_action: input_number.set_value
+        target:
+          entity_id: input_number.curtain_heart_dir
+        data:
+          value: 5
+    - type: button
+      name: ''
+      tap_action:
+        action: none

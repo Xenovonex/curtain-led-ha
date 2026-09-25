@@ -1,0 +1,15 @@
+[Unit]
+Description=Curtain LED BLE-MQTT bridge
+After=network-online.target bluetooth.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/curtain-led.env
+WorkingDirectory=/opt/curtain-led/bridge
+ExecStart=/opt/curtain-led/bridge/venv/bin/python /opt/curtain-led/bridge/curtain_bridge.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

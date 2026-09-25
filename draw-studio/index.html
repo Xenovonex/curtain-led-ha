@@ -1,0 +1,547 @@
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Curtain LED Studio</title>
+<style>
+:root{--bg:#0d0d10;--fg:#e8e8ea;--pan:#17171c;--acc:#2563eb}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif}
+.wrap{max-width:640px;margin:0 auto;padding:8px}
+h3{margin:10px 4px 6px}
+#tabs{display:flex;gap:4px;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:5}
+#tabs button{flex:1;padding:10px;border:0;border-radius:8px;background:var(--pan);color:var(--fg);font-size:14px}
+#tabs button.on{background:var(--acc)}
+.tab{display:none}.tab.on{display:block}
+#grid{display:grid;grid-template-columns:repeat(20,1fr);gap:1px;width:min(94vw,560px);aspect-ratio:1;margin:6px auto;background:#333;touch-action:none;user-select:none}
+.cell{background:#000}
+#palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:8px auto}
+.sw{width:36px;height:36px;border-radius:8px;border:3px solid #333}
+.sw.sel{border-color:#fff}
+button.act{font-size:14px;padding:9px 13px;margin:3px;border:0;border-radius:8px;background:#26262c;color:#eee}
+button.act.pri{background:var(--acc)}
+.row{display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap;margin:6px}
+input[type=range]{width:60%}
+#lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.pat{background:var(--pan);border-radius:8px;padding:6px;text-align:center;font-size:11px}
+.pat canvas{width:100%;image-rendering:pixelated;background:#000;border-radius:4px}
+.dirs{display:grid;grid-template-columns:repeat(3,52px);gap:5px;justify-content:center;margin:8px auto}
+.dirs button{height:46px;border:0;border-radius:8px;background:#26262c;color:#eee;font-size:18px}
+.slot{background:var(--pan);border-radius:8px;padding:8px;margin:8px 0}
+.frames{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.frame{width:46px;height:46px;border-radius:6px;border:2px solid #333;position:relative}
+.frame canvas{width:100%;height:100%;image-rendering:pixelated;border-radius:4px;background:#000}
+.frame.sel{border-color:var(--acc)}
+select,input[type=number]{background:#26262c;color:#eee;border:0;border-radius:6px;padding:6px}
+small{color:#9aa}
+</style></head><body><div class="wrap">
+<div id="tabs">
+ <button class="on" data-t="paint">Paint</button>
+ <button data-t="library">Library</button>
+ <button data-t="animate">Animate</button>
+ <button data-t="seq">Sequences</button>
+</div>
+
+<div class="tab on" id="paint">
+ <div id="palette"></div>
+ <div id="grid"></div>
+ <div class="row"><span>Brightness</span><input type="range" id="bright" min="1" max="100" value="100"><span id="bval">100</span></div>
+ <div class="row">
+  <button class="act pri" onclick="send()">Send</button>
+  <button class="act" onclick="clearGrid();send()">Clear</button>
+  <label><input type="checkbox" id="live" checked> live</label>
+ </div>
+</div>
+
+<div class="tab" id="library">
+ <div class="row"><small>Tap a pattern to load it. Recolor:</small>
+   <select id="recolor"><option value="">Original colors</option></select>
+ </div>
+ <div id="lib"></div>
+</div>
+
+<div class="tab" id="animate">
+ <h3>Move the drawing</h3>
+ <div class="dirs">
+  <button onclick="move(-1,-1)">&#8598;</button><button onclick="move(-1,0)">&#8593;</button><button onclick="move(-1,1)">&#8599;</button>
+  <button onclick="move(0,-1)">&#8592;</button><button onclick="move(0,0)">&#8226;</button><button onclick="move(0,1)">&#8594;</button>
+  <button onclick="move(1,-1)">&#8601;</button><button onclick="move(1,0)">&#8595;</button><button onclick="move(1,1)">&#8600;</button>
+ </div>
+ <div class="row"><label><input type="checkbox" id="wrap" checked> wrap around</label></div>
+ <h3>Auto animate</h3>
+ <div class="row">
+  <select id="animdir"><option value="0,1">Scroll &#8594;</option><option value="0,-1">Scroll &#8592;</option>
+   <option value="1,0">Scroll &#8595;</option><option value="-1,0">Scroll &#8593;</option>
+   <option value="1,1">Scroll &#8600;</option><option value="-1,-1">Scroll &#8598;</option></select>
+  <button class="act pri" id="scrollbtn" onclick="toggleScroll()">Start scroll</button>
+ </div>
+ <div class="row">
+  <button class="act" onclick="fade('out')">Fade out</button>
+  <button class="act" onclick="fade('in')">Fade in</button>
+ </div>
+ <div class="row"><span>Speed</span><input type="range" id="animspeed" min="400" max="2000" value="800"></div>
+ <small>These animate the picture currently on the grid.</small>
+</div>
+
+<div class="tab" id="seq">
+ <div class="row">
+  <span>Slot</span>
+  <select id="slotSel"></select>
+  <button class="act" onclick="addFrame()">+ Add current frame</button>
+ </div>
+ <div class="slot">
+  <div class="frames" id="frames"></div>
+  <div class="row" id="frameOpts" style="display:none">
+   <span>Transition:</span>
+   <select id="trans">
+    <option value="instant">Instant</option><option value="fade">Fade</option>
+    <option value="transform">Transform</option>
+    <option value="move,0,1">Move &#8594;</option><option value="move,0,-1">Move &#8592;</option>
+    <option value="move,1,0">Move &#8595;</option><option value="move,-1,0">Move &#8593;</option>
+    <option value="move,1,1">Move &#8600;</option><option value="move,-1,-1">Move &#8598;</option>
+   </select>
+   <span>Hold(ms)</span><input type="number" id="hold" value="600" min="100" step="100" style="width:80px">
+   <button class="act" onclick="delFrame()">Delete frame</button>
+  </div>
+ </div>
+ <div class="row">
+  <button class="act pri" id="playbtn" onclick="togglePlay()">Play sequence</button>
+  <label><input type="checkbox" id="loop" checked> loop</label>
+ </div>
+ <small>Sequences save automatically in this browser. Each slot holds up to 10 frames.</small>
+</div>
+
+</div>
+<script>
+const W=20,H=20,N=400;
+const CMAP={'.':null,'r':0,'o':15,'y':30,'g':60,'c':90,'b':120,'p':150,'m':180,'w':'w','n':22,'k':null};
+const PAL=[["Red",0],["Orange",15],["Yellow",30],["Green",60],["Cyan",90],["Blue",120],["Purple",150],["Pink",180],["White","w"],["Erase",null]];
+function css(v){if(v===null)return"#000";if(v==="w")return"#fff";return`hsl(${v/180*360},100%,50%)`;}
+
+// ---------- pattern library ----------
+function rows(a){const g=new Array(N).fill(null);for(let r=0;r<20;r++){const row=((a[r]||'')+'....................').slice(0,20);for(let c=0;c<20;c++){const ch=row[c];g[r*20+c]=(CMAP[ch]===undefined?null:CMAP[ch]);}}return g;}
+const P={};
+P.Heart={cat:"Generic",rows:[
+"....................","...rrrr....rrrr.....",".rrrrrrrr.rrrrrrrr..","rrrrrrrrrrrrrrrrrr..",
+"rrrrrrrrrrrrrrrrrr..","rrrrrrrrrrrrrrrrrr..","rrrrrrrrrrrrrrrrrr..",".rrrrrrrrrrrrrrrr...",
+"..rrrrrrrrrrrrrrr...","...rrrrrrrrrrrrr....","....rrrrrrrrrrr.....",".....rrrrrrrrr......",
+"......rrrrrrr.......",".......rrrrr........","........rrr.........",".........r..........",
+"....................","....................","....................","...................."]};
+P.Star={cat:"Generic",rows:[
+"..........y.........","..........y.........",".........yyy........",".........yyy........",
+"........yyyyy.......","yyyyyyyyyyyyyyyyyyy.",".yyyyyyyyyyyyyyyyy..","..yyyyyyyyyyyyyyy...",
+"...yyyyyyyyyyyyy....","....yyyyyyyyyyy.....","....yyyyyyyyyyy.....","...yyyyy...yyyyy....",
+"..yyyyy.....yyyyy...",".yyyy.........yyyy..","yyy.............yyy.","....................",
+"....................","....................","....................","...................."]};
+P.Diamond={cat:"Generic",rows:[
+"..........c.........",".........ccc........","........ccccc.......",".......ccccccc......",
+"......ccccccccc.....",".....ccccccccccc....","....ccccccccccccc...","...ccccccccccccccc..",
+"..ccccccccccccccccc.","...ccccccccccccccc..","....ccccccccccccc...",".....ccccccccccc....",
+"......ccccccccc.....",".......ccccccc......","........ccccc.......",".........ccc........",
+"..........c.........","....................","....................","...................."]};
+P.Smiley={cat:"Generic",rows:[
+".....yyyyyyyyyy.....","...yyyyyyyyyyyyyy...","..yyyyyyyyyyyyyyyy..",".yyyyyyyyyyyyyyyyyy.",
+"yyyyykkyyyyyykkyyyyy","yyyyykkyyyyyykkyyyyy","yyyyyyyyyyyyyyyyyyyy","yyyyyyyyyyyyyyyyyyyy",
+"yyyyyyyyyyyyyyyyyyyy","yykkyyyyyyyyyyyykkyy","yyykkyyyyyyyyyykkyyy","yyyykkkyyyyykkkyyyyy",
+".yyyykkkkkkkkkyyyyy.","..yyyyykkkkkyyyyyy..","...yyyyyyyyyyyyyy...",".....yyyyyyyyyy.....",
+"....................","....................","....................","...................."]};
+P.Arrow={cat:"Generic",rows:[
+".........g..........","........ggg.........",".......ggggg........","......ggggggg.......",
+".....ggggggggg......","....ggggggggggg.....","...ggggggggggggg....","..ggggggggggggggg...",
+".ggggggggggggggggg..","......ggggggg.......","......ggggggg.......","......ggggggg.......",
+"......ggggggg.......","......ggggggg.......","......ggggggg.......","......ggggggg.......",
+"......ggggggg.......","....................","....................","...................."]};
+P.Checkers={cat:"Generic",rows:[
+"pp..pp..pp..pp..pp..","pp..pp..pp..pp..pp..","..pp..pp..pp..pp..pp","..pp..pp..pp..pp..pp",
+"pp..pp..pp..pp..pp..","pp..pp..pp..pp..pp..","..pp..pp..pp..pp..pp","..pp..pp..pp..pp..pp",
+"pp..pp..pp..pp..pp..","pp..pp..pp..pp..pp..","..pp..pp..pp..pp..pp","..pp..pp..pp..pp..pp",
+"pp..pp..pp..pp..pp..","pp..pp..pp..pp..pp..","..pp..pp..pp..pp..pp","..pp..pp..pp..pp..pp",
+"pp..pp..pp..pp..pp..","pp..pp..pp..pp..pp..","..pp..pp..pp..pp..pp","..pp..pp..pp..pp..pp"]};
+P.Ring={cat:"Generic",rows:[
+".......bbbbbb.......","......bbbbbbbb......",".....bb......bb.....","....bb........bb....",
+"...bb..........bb...","..bb............bb..","..bb............bb..",".bb..............bb.",
+".bb..............bb.",".bb..............bb.",".bb..............bb.","..bb............bb..",
+"..bb............bb..","...bb..........bb...","....bb........bb....",".....bb......bb.....",
+"......bbbbbbbb......",".......bbbbbb.......","....................","...................."]};
+P.Plus={cat:"Generic",rows:[
+"........rrrr........","........rrrr........","........rrrr........","........rrrr........",
+"........rrrr........","........rrrr........","rrrrrrrrrrrrrrrrrrrr","rrrrrrrrrrrrrrrrrrrr",
+"rrrrrrrrrrrrrrrrrrrr","rrrrrrrrrrrrrrrrrrrr","........rrrr........","........rrrr........",
+"........rrrr........","........rrrr........","........rrrr........","........rrrr........",
+"....................","....................","....................","...................."]};
+
+P.Tree={cat:"Holiday",rows:[
+"..........y.........",".........ygy........","..........g.........",".........ggg........",
+"........ggggg.......",".......ggggggg......","........ggggg.......",".......ggggggg......",
+"......ggggggggg.....",".....ggggggggggg....","......ggggggggg.....",".....ggggggggggg....",
+"....ggggggggggggg...","...ggggggggggggggg..",".....ggggggggggg....","........nnn.........",
+"........nnn.........","........nnn.........","......ooooooo.......","...................."]};
+P.Snowflake={cat:"Holiday",rows:[
+"..........w.........","......w...w...w.....","...w..ww.ww.ww..w...","....ww.wwwww.ww.....",
+".....w.wwwww.w......","w.....wwwwwww.....w.",".ww..wwwwwwwww..ww..","..wwwwwwwwwwwwwww...",
+"...wwwwwwwwwwwww....","wwwwwwwwwwwwwwwwwww.","...wwwwwwwwwwwww....","..wwwwwwwwwwwwwww...",
+".ww..wwwwwwwww..ww..","w.....wwwwwww.....w.",".....w.wwwww.w......","....ww.wwwww.ww.....",
+"...w..ww.ww.ww..w...","......w...w...w.....","..........w.........","...................."]};
+P.Gift={cat:"Holiday",rows:[
+"....................","........y.y.........",".......yy.yy........","........yyy.........",
+"....rrrryrrrr.......","...rrrrryrrrrr......","...rrrrryrrrrr......","...yyyyyyyyyyy......",
+"...rrrrryrrrrr......","...rrrrryrrrrr......","...rrrrryrrrrr......","...rrrrryrrrrr......",
+"...rrrrryrrrrr......","...rrrrryrrrrr......","....................","....................",
+"....................","....................","....................","...................."]};
+P.CandyCane={cat:"Holiday",rows:[
+".......wwrr.........","......wrrrrw........",".....wr....rw.......",".....wr....rw.......",
+".....rr....rw.......",".....ww...rr........",".....rr..ww.........",".....ww.rr..........",
+".....rr.ww..........","......rr............","......ww............","......rr............",
+"......ww............","......rr............","......ww............","......rr............",
+"......ww............","......rr............","......ww............","...................."]};
+P.Snowman={cat:"Holiday",rows:[
+".......wwww.........","......wwwwww........","......wkwwkw........","......wwwwww........",
+".......woow.........","......wwwwww........",".....wwwwwwww.......","....wwwwrwwwww......",
+"...wwwwwwwwwww......","...wwwwrwwwwww......","...wwwwwwwwwww......","...wwwwrwwwwww......",
+"....wwwwwwwww.......",".....wwwwwww........","....................","....................",
+"....................","....................","....................","...................."]};
+P.BigStar={cat:"Holiday",rows:[
+"..........y.........","..........y.........",".........yyy........",".........yyy........",
+"........yyyyy........".slice(0,20),"yyyyyyyyyyyyyyyyyyyy",".yyyyyyyyyyyyyyyyy..","..yyyyyyyyyyyyyyy...",
+"...yyyyyyyyyyyyy....","....yyyyyyyyyyy.....","...yyyyyyyyyyyyy....","..yyyyyy.yyyyyyy....",
+".yyyyy.....yyyyy....","yyyy........yyyyy...","yy...........yyyy..","....................",
+"....................","....................","....................","...................."]};
+P.Ornament={cat:"Holiday",rows:[
+".........yy.........",".........yy.........","........yyyy........",".......mmmmmm.......",
+"......mmwwwwmm......".slice(0,20),".....mmwwwwwwmm.....","....mmmmwwwwmmmm....","....mmmmmmmmmmmm....",
+"...mmmmmmmmmmmmmm...","...mmmwwmmmmwwmmm...","...mmmmmmmmmmmmmm...","...mmmmmmmmmmmmmm...",
+"....mmmmmmmmmmmm....","....mmmmmmmmmmmm....".slice(0,20),".....mmmmmmmmmm.....","......mmmmmmmm......",
+".......mmmmmm.......","....................","....................","...................."]};
+
+P.Pumpkin={cat:"Halloween",rows:[
+"........gg..........","........gg..........",".......gg...........","....oooooooooo......",
+"...oooooooooooo.....","..oooooooooooooo....",".ooooooooooooooooo..","ooookoooooooookoooo.",
+"oookkkooooooookkkooo.".slice(0,20),"ooookoooooooookoooo.","ooooooookkooooooooo.","oooooookkkkoooooooo.",
+"ookkooookkooookkooo.".slice(0,20),"okkkkookkooookkkkoo.".slice(0,20),"ooooooooooooooooooo.",".oooooooooooooooo..",
+"..oooooooooooooo....","...oooooooooooo.....","....oooooooooo......","...................."]};
+P.Ghost={cat:"Halloween",rows:[
+".....wwwwwwww.......","....wwwwwwwwww......","...wwwwwwwwwwww.....","..wwwkkwwwwkkwww....",
+"..wwkkkkwwkkkkww....","..wwkkkkwwkkkkww....","..wwwwwwwwwwwwww....","..wwwwwwwwwwwwww....",
+".wwwwwwwwwwwwwwww...".slice(0,20),".wwwwwwwwwwwwwwww...".slice(0,20),".wwwwwwwwwwwwwwww...".slice(0,20),".wwwwwwwwwwwwwwww...".slice(0,20),
+".wwwwwwwwwwwwwwww...".slice(0,20),".wwwwwwwwwwwwwwww...".slice(0,20),".ww.wwww.wwww.www...".slice(0,20),".w...ww...ww...ww..",
+"....................","....................","....................","...................."]};
+P.Bat={cat:"Halloween",rows:[
+"....................",
+"....................",
+"......p....p........",
+".....ppp..ppp.......",
+"..p..pppppppp..p....",
+".ppp.pppppppp.ppp...",
+"pppppppppppppppppppp",
+"ppp.pppppppppp.ppp..",
+".p...pppppppp...p...",
+"......p.pp.p........",
+"....................",
+"....................",
+"....................",
+"....................",
+"....................",
+"....................",
+"....................",
+"....................",
+"....................",
+"...................."]};
+P.Spider={cat:"Halloween",rows:[
+"....................",
+"....................",
+"p.......pp.......p..",
+".p.....pppp.....p...",
+"..p...pppppp...p....",
+"...p.pppppppp.p.....",
+"....pppppppppp......",
+"...prppppppprp......",
+"....pppppppppp......",
+"...p.pppppppp.p.....",
+"..p...pppppp...p....",
+".p.....pppp.....p...",
+"p.......pp.......p..",
+"....................",
+"....................",
+"....................",
+"....................",
+"....................",
+"....................",
+"...................."]};
+P.Skull={cat:"Halloween",rows:[
+".....wwwwwwww.......","...wwwwwwwwwwww.....","..wwwwwwwwwwwwww....",".wwwwwwwwwwwwwwww...".slice(0,20),
+".wwkkkkwwwwkkkkww...".slice(0,20),".wkkkkkkwwkkkkkkw...".slice(0,20),".wkkkkkkwwkkkkkkw...".slice(0,20),".wwwkkwwwwwwkkwww...".slice(0,20),
+".wwwwwwkkkkwwwwww...".slice(0,20),".wwwwwwkkkkwwwwww...".slice(0,20),"..wwwwwwwwwwwwww....","...wwwwwwwwwwww.....",
+"...wkwkwkwkwkww.....","...wkwkwkwkwkww.....","...wwwwwwwwwwww.....","....................",
+"....................","....................","....................","...................."]};
+P.WitchHat={cat:"Halloween",rows:[
+"....................",
+"........pp..........",
+"........pp..........",
+".......pppp.........",
+".......pppp.........",
+"......pppppp........",
+"......pppppp........",
+".....pppppppp.......",
+".....yyyyyyyy.......",
+".....pppppppp.......",
+"....pppppppppp......",
+"...pppppppppppp.....",
+"..pppppppppppppp....",
+".yyyyyyyyyyyyyyyy...",
+"pppppppppppppppppp..",
+"....................",
+"....................",
+"....................",
+"....................",
+"...................."]};
+P.CandyCorn={cat:"Halloween",rows:[
+"....................","........ww..........",".......wwww.........",".......wwww.........",
+"......oooooo........","......oooooo........",".....oooooooo.......",".....oooooooo.......",
+"....yyyyyyyyyy......","....yyyyyyyyyy......","...yyyyyyyyyyyy.....","...yyyyyyyyyyyy.....",
+"..yyyyyyyyyyyyyy....","....................","....................","....................",
+"....................","....................","....................","...................."]};
+
+P.Cactus={cat:"Games",rows:[
+"....................",
+"....g.......g.......",
+"....g.......g.......",
+"....g.......g.......",
+"....g..ggg..g.......",
+"....ggggggggg.......",
+".......ggg..........",
+"......ggggg.........",
+"......ggggg.........",
+"......gkgkg.........",
+"......ggggg.........",
+"......gkkkg.........",
+"......ggggg.........",
+"......ggggg.........",
+"......gg.gg.........",
+".....gg...gg........",
+".....g.....g........",
+"....................",
+"....................",
+"...................."]};
+P.Chick={cat:"Games",rows:[
+"..........yyy.......","........yyyyyy......","........yykyy.......".slice(0,20),"........yyyyy.......",
+".......oyyy.........","........yy..........",".......yyy..........","...yyyyyyy...........",
+"..yyyyyyyyyy.........",".yyyyyyyyyyyy........",".yyyyyyyyyyyyy.......",".yyyyyyyyyyyyy.......",
+".yyyyyyyyyyyy........","..yyyyyyyyyy.........","...yyy...yyy.........","...yy.....yy.........",
+"..ooo.....ooo.......",".ooo.......ooo......","....................","...................."]};
+P.SpaceBug={cat:"Games",rows:[
+"....................","....gg......gg......",".....gg....gg.......","....gggggggggg......",
+"...gg.gggggg.gg.....","..gggggggggggggg....","..g.gggggggggg.g....","..g.g........g.g....",
+".....gg....gg.......","....................","....................","....................",
+"....................","....................","....................","....................",
+"....................","....................","....................","...................."]};
+P.Mushroom={cat:"Games",rows:[
+".....gggggggg.......","...gggggggggggg.....","..gggwwwggggwwwg....",".gggwwwwwggwwwwwg...".slice(0,20),
+".ggwwwwwwggwwwwwwg..".slice(0,20),".gggggggggggggggg...".slice(0,20),".gggggggggggggggg...".slice(0,20),
+"..gwwwwwwwwwwwwg....","...wwwwwwwwwwww.....","....wwkkwwwwkkww....".slice(0,20),"....wwkkwwwwkkww....".slice(0,20),
+"....wwwwwwwwwwww....","....wwwwwwwwwwww....",".....wwwwwwwwww.....","....................","....................",
+"....................","....................","....................","...................."]};
+P.Chomp={cat:"Games",rows:[
+".....yyyyyyyy.......","...yyyyyyyyyyyy.....","..yyyyyyyyyyyyyy....",".yyyyyyyyyyyyy......",
+"yyyyyyyyyyyy........","yyyyyyyyyyy.........","yyyyyyyyyy..........","yyyyyyyyy...........",
+"yyyyyyyyyy..........","yyyyyyyyyyy.........","yyyyyyyyyyyy........",".yyyyyyyyyyyyy......",
+"..yyyyyyyyyyyyyy....","...yyyyyyyyyyyy.....",".....yyyyyyyy.......","....................",
+"....................","....................","....................","...................."]};
+P.Note={cat:"Games",rows:[
+"....................",
+"...........wwww.....",
+"...........w..ww....",
+"...........w...w....",
+"...........w..ww....",
+"...........wwww.....",
+"...........w........",
+"...........w........",
+"...........w........",
+"...........w........",
+"...........w........",
+"........wwww........",
+".......wwwwww.......",
+"......wwwwwwww......",
+"......wwwwwwww......",
+".......wwwwww.......",
+"........wwww........",
+"....................",
+"....................",
+"...................."]};
+P.Bolt={cat:"Games",rows:[
+"..........yyy.......",".........yyy........".slice(0,20),"........yyy.........",".......yyy..........",
+"......yyy...........",".....yyyyyyy........","....yyyyyyyy........","...yyyyyyy..........",
+".......yyy..........","......yyy...........".slice(0,20),".....yyy............","....yyy.............",
+"...yyy..............","..yyy...............",".yyy................","....................",
+"....................","....................","....................","...................."]};
+P.Flower={cat:"Games",rows:[
+"........mmm.........",".......mmmmm........",".....mm.mmm.mm......","....mmm.mmm.mmm.....",
+"....mm..yyy..mm.....","...mmm.yyyyy.mmm....","...mmm.yyyyy.mmm....","....mm..yyy..mm.....",
+"....mmm.mmm.mmm.....",".....mm.mmm.mm......",".......mmmmm........","........ggg.........",
+"........ggg.........","........ggg.........","......gg.gg.........","....gg...ggg........",
+"........ggg.........","....................","....................","...................."]};
+
+P.Netherlands={cat:"Flags",rows:[
+"rrrrrrrrrrrrrrrrrrrr",
+"rrrrrrrrrrrrrrrrrrrr",
+"rrrrrrrrrrrrrrrrrrrr",
+"rrrrrrrrrrrrrrrrrrrr",
+"rrrrrrrrrrrrrrrrrrrr",
+"rrrrrrrrrrrrrrrrrrrr",
+"rrrrrrrrrrrrrrrrrrrr",
+"wwwwwwwwwwwwwwwwwwww",
+"wwwwwwwwwwwwwwwwwwww",
+"wwwwwwwwwwwwwwwwwwww",
+"wwwwwwwwwwwwwwwwwwww",
+"wwwwwwwwwwwwwwwwwwww",
+"wwwwwwwwwwwwwwwwwwww",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb"]};
+P.USA={cat:"Flags",rows:[
+"bbbbbbbbbrrrrrrrrrrr",
+"bwbwbwbwbwwwwwwwwwww",
+"bbbbbbbbbrrrrrrrrrrr",
+"bwbwbwbwbwwwwwwwwwww",
+"bbbbbbbbbrrrrrrrrrrr",
+"bwbwbwbwbwwwwwwwwwww",
+"bbbbbbbbbrrrrrrrrrrr",
+"bwbwbwbwbwwwwwwwwwww",
+"bbbbbbbbbrrrrrrrrrrr",
+"bwbwbwbwbwwwwwwwwwww",
+"rrrrrrrrrrrrrrrrrrrr",
+"wwwwwwwwwwwwwwwwwwww",
+"rrrrrrrrrrrrrrrrrrrr",
+"wwwwwwwwwwwwwwwwwwww",
+"rrrrrrrrrrrrrrrrrrrr",
+"wwwwwwwwwwwwwwwwwwww",
+"rrrrrrrrrrrrrrrrrrrr",
+"wwwwwwwwwwwwwwwwwwww",
+"rrrrrrrrrrrrrrrrrrrr",
+"wwwwwwwwwwwwwwwwwwww"]};
+P.PuertoRico={cat:"Flags",rows:[
+"rrrrrrrrrrrrrrrrrrrr",
+"brrrrrrrrrrrrrrrrrrr",
+"bbrrrrrrrrrrrrrrrrrr",
+"bbbrrrrrrrrrrrrrrrrr",
+"bbbbwwwwwwwwwwwwwwww",
+"bbbbbwwwwwwwwwwwwwww",
+"bbbbbbwwwwwwwwwwwwww",
+"bbbwbbbwwwwwwwwwwwww",
+"bbwwwbbbrrrrrrrrrrrr",
+"bwwwwwbbbrrrrrrrrrrr",
+"bbwwwbbbbrrrrrrrrrrr",
+"bbbwbbbbrrrrrrrrrrrr",
+"bbbbbbbwwwwwwwwwwwww",
+"bbbbbbwwwwwwwwwwwwww",
+"bbbbbwwwwwwwwwwwwwww",
+"bbbbwwwwwwwwwwwwwwww",
+"bbbrrrrrrrrrrrrrrrrr",
+"bbrrrrrrrrrrrrrrrrrr",
+"brrrrrrrrrrrrrrrrrrr",
+"rrrrrrrrrrrrrrrrrrrr"]};
+P.Curacao={cat:"Flags",rows:[
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbwbbbbbbbbbbbbbb",
+"bbbbwwwbbbbbbbbbbbbb",
+"bbbwwwwwbbbbbbbbbbbb",
+"bbbbwwwbbbbbbbbbbbbb",
+"bbbbbwbbwbbbbbbbbbbb",
+"bbbbbbbwwwbbbbbbbbbb",
+"bbbbbbwwwwwbbbbbbbbb",
+"bbbbbbbwwwbbbbbbbbbb",
+"bbbbbbbbwbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb",
+"yyyyyyyyyyyyyyyyyyyy",
+"yyyyyyyyyyyyyyyyyyyy",
+"yyyyyyyyyyyyyyyyyyyy",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb",
+"bbbbbbbbbbbbbbbbbbbb"]};
+// ---------- state ----------
+let sel=0, grid=new Array(N).fill(null);
+const cells=[];
+const g=document.getElementById('grid');
+for(let i=0;i<N;i++){const c=document.createElement('div');c.className='cell';cells.push(c);g.appendChild(c);}
+function paintCell(i,v){grid[i]=v;cells[i].style.background=css(v);}
+function redraw(){for(let i=0;i<N;i++)cells[i].style.background=css(grid[i]);}
+function clearGrid(){grid.fill(null);redraw();}
+const pal=document.getElementById('palette');
+PAL.forEach(([n,v],idx)=>{const d=document.createElement('div');d.className='sw'+(idx===0?' sel':'');d.style.background=css(v);d.title=n;d.onclick=()=>{sel=idx;[...pal.children].forEach(x=>x.classList.remove('sel'));d.classList.add('sel');};pal.appendChild(d);});
+let down=false;
+function idxAt(e){const t=(e.touches&&e.touches[0])||e;const el=document.elementFromPoint(t.clientX,t.clientY);return el&&el.classList.contains('cell')?cells.indexOf(el):-1;}
+g.addEventListener('pointerdown',e=>{down=true;const i=idxAt(e);if(i>=0)paintCell(i,PAL[sel][1]);e.preventDefault();});
+g.addEventListener('pointermove',e=>{if(!down)return;const i=idxAt(e);if(i>=0)paintCell(i,PAL[sel][1]);e.preventDefault();});
+window.addEventListener('pointerup',()=>{if(down){down=false;if(document.getElementById('live').checked)send();}});
+const bright=document.getElementById('bright');
+bright.oninput=()=>{document.getElementById('bval').textContent=bright.value;if(document.getElementById('live').checked)send();};
+
+function send(gr=grid,br=+bright.value){return fetch('/draw',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grid:gr,bright:br})}).catch(()=>{});}
+
+// ---------- tabs ----------
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
+ document.querySelectorAll('#tabs button').forEach(x=>x.classList.remove('on'));
+ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+ b.classList.add('on');document.getElementById(b.dataset.t).classList.add('on');
+});
+
+// ---------- library ----------
+const lib=document.getElementById('lib');
+const recolor=document.getElementById('recolor');
+PAL.forEach(([n,v])=>{if(v!==null){const o=document.createElement('option');o.value=(v==='w'?'w':v);o.textContent=n;recolor.appendChild(o);}});
+function patGrid(name){return rows(P[name].rows);}
+function applyRecolor(gr){const rc=recolor.value;if(rc==='')return gr;const v=rc==='w'?'w':+rc;return gr.map(x=>x===null?null:v);}
+function miniCanvas(gr){const cv=document.createElement('canvas');cv.width=20;cv.height=20;const cx=cv.getContext('2d');for(let i=0;i<N;i++){cx.fillStyle=css(gr[i]);cx.fillRect(i%20,(i/20)|0,1,1);}return cv;}
+Object.keys(P).forEach(name=>{
+ const d=document.createElement('div');d.className='pat';
+ d.appendChild(miniCanvas(patGrid(name)));
+ const lbl=document.createElement('div');lbl.textContent=name;d.appendChild(lbl);
+ d.onclick=()=>{grid=applyRecolor(patGrid(name)).slice();redraw();send();
+   document.querySelectorAll('#tabs button').forEach(x=>x.classList.remove('on'));
+   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+   document.querySelector('#tabs button[data-t=paint]').classList.add('on');document.getElementById('paint').classList.add('on');};
+ lib.appendChild(d);
+});
+
+// ---------- animate ----------
+function shift(gr,dr,dc,wrap){const out=new Array(N).fill(null);for(let r=0;r<20;r++)for(let c=0;c<20;c++){let nr=r+dr,nc=c+dc;if(wrap){nr=(nr+20)%20;nc=(nc+20)%20;}if(nr>=0&&nr<20&&nc>=0&&nc<20)out[nr*20+nc]=gr[r*20+c];}return out;}
+function move(dr,dc){grid=shift(grid,dr,dc,document.getElementById('wrap').checked);redraw();send();}
+let scrolling=false;
+async function toggleScroll(){const btn=document.getElementById('scrollbtn');
+ if(scrolling){scrolling=false;btn.textContent='Start scroll';return;}
+ scrolling=true;btn.textContent='Stop scroll';
+ const [dr,dc]=document.getElementById('animdir').value.split(',').map(Number);
+ while(scrolling){grid=shift(grid,dr,dc,true);redraw();await send();await sleep(Math.max(450,+document.getElementById('animspeed').value));}}
+async function fade(dir){const target=dir==='out'?1:100;const start=dir==='out'?+bright.value:1;const steps=5;
+ for(let i=0;i<=steps;i++){const b=Math.round(start+(target-start)*i/steps);bright.value=b;document.getElementById('bval').textContent=b;await send(grid,b);await sleep(160);}}
+
+// ---------- sequences ----------
+let seqs=JSON.parse(localStorage.getItem('curtainSeqs')||'null')||Array.from({length:10},()=>[]);
+let curSlot=0,curFrame=-1;
+const slotSel=document.getElementById('slotSel');
+for(let i=0;i<10;i++){const o=document.createElement('option');o.value=i;o.textContent='Slot '+(i+1);slotSel.appendChild(o);}
+slotSel.onchange=()=>{curSlot=+slotSel.value;curFrame=-1;renderFrames();};
+function saveSeqs(){localStorage.setItem('curtainSeqs',JSON.stringify(seqs));}
+function addFrame(){if(seqs[curSlot].length>=10){alert('Slot full (10 frames)');return;}seqs[curSlot].push({grid:grid.slice(),bright:+bright.value,trans:'instant',hold:600});saveSeqs();renderFrames();}
+function delFrame(){if(curFrame<0)return;seqs[curSlot].splice(curFrame,1);curFrame=-1;saveSeqs();renderFrames();}
+function renderFrames(){const fr=document.getElementById('frames');fr.innerHTML='';seqs[curSlot].forEach((f,i)=>{const d=document.createElement('div');d.className='frame'+(i===curFrame?' sel':'');d.appendChild(miniCanvas(f.grid));d.onclick=()=>{curFrame=i;showOpts();renderFrames();};fr.appendChild(d);});document.getElementById('frameOpts').style.display=curFrame>=0?'flex':'none';if(curFrame>=0)showOpts();}
+function showOpts(){const f=seqs[curSlot][curFrame];if(!f)return;document.getElementById('trans').value=f.trans;document.getElementById('hold').value=f.hold;}
+document.getElementById('trans').onchange=e=>{if(curFrame>=0){seqs[curSlot][curFrame].trans=e.target.value;saveSeqs();}};
+document.getElementById('hold').onchange=e=>{if(curFrame>=0){seqs[curSlot][curFrame].hold=+e.target.value;saveSeqs();}};
+let playing=false,playAbort=false;
+function togglePlay(){const btn=document.getElementById('playbtn');if(playing){playAbort=true;playing=false;btn.textContent='Play sequence';return;}playing=true;playAbort=false;btn.textContent='Stop';playSeq().then(()=>{playing=false;btn.textContent='Play sequence';});}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+async function transitionTo(f){const t=f.trans||'instant';
+ if(t==='instant'||t==='transform'){await send(f.grid,f.bright);return;}
+ if(t==='fade'){for(let i=1;i<=4;i++){if(playAbort)return;await send(f.grid,Math.round(f.bright*i/4));await sleep(140);}await send(f.grid,f.bright);return;}
+ if(t.startsWith('move')){const pr=t.split(',');const dr=+pr[1],dc=+pr[2];
+  for(let step=6;step>=1;step--){if(playAbort)return;await send(shift(f.grid,-dr*step*3,-dc*step*3,false),f.bright);await sleep(110);}
+  await send(f.grid,f.bright);return;}
+ await send(f.grid,f.bright);}
+async function playSeq(){do{for(const f of seqs[curSlot]){if(playAbort)return;await transitionTo(f);if(playAbort)return;await sleep(Math.max(300,f.hold));}}while(document.getElementById('loop').checked&&!playAbort);}
+renderFrames();
+</script></body></html>

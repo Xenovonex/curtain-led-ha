@@ -1,0 +1,144 @@
+# Package: SurpLife curtain light control helpers
+input_boolean:
+  curtain_power:
+    name: Power
+    icon: mdi:power
+
+input_number:
+  curtain_hue:
+    name: Hue (X)
+    min: 0
+    max: 255
+    step: 1
+    mode: slider
+    icon: mdi:palette
+  curtain_white:
+    name: White brightness
+    min: 0
+    max: 127
+    step: 1
+    initial: 60
+    mode: slider
+    icon: mdi:white-balance-sunny
+  curtain_bright:
+    name: Color brightness
+    min: 0
+    max: 127
+    step: 1
+    initial: 127
+    mode: slider
+    icon: mdi:brightness-6
+  curtain_anim_id:
+    name: Animation number
+    min: 0
+    max: 40
+    step: 1
+    initial: 2
+    mode: slider
+    icon: mdi:movie-open
+  curtain_anim_speed:
+    name: Animation speed
+    min: 0
+    max: 100
+    step: 1
+    initial: 50
+    mode: slider
+    icon: mdi:speedometer
+  curtain_anim_bright:
+    name: Animation brightness
+    min: 0
+    max: 100
+    step: 1
+    initial: 100
+    mode: slider
+    icon: mdi:brightness-6
+  curtain_heart_dir:
+    name: Heart direction byte
+    min: 0
+    max: 5
+    step: 1
+    initial: 5
+    mode: box
+    icon: mdi:arrow-all
+  curtain_heart_speed:
+    name: Heart speed
+    min: 0
+    max: 100
+    step: 1
+    initial: 25
+    mode: slider
+    icon: mdi:heart-pulse
+  curtain_heart_bright:
+    name: Heart brightness
+    min: 0
+    max: 100
+    step: 1
+    initial: 90
+    mode: slider
+    icon: mdi:brightness-6
+
+automation:
+  - id: curtain_power_toggle
+    alias: Curtain power toggle
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: input_boolean.curtain_power
+    action:
+      - service: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: >-
+            {% if is_state('input_boolean.curtain_power','on') %}0a7123,0ae20b{{ '%02x' | format(states('input_number.curtain_hue')|float|int) }}{{ '%02x' | format(states('input_number.curtain_white')|float|int) }}{% else %}0a7124{% endif %}
+  - id: curtain_color_main
+    alias: Curtain color hue + brightness
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id:
+          - input_number.curtain_hue
+          - input_number.curtain_bright
+    action:
+      - service: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: "0ae20b{{ '%02x' | format(states('input_number.curtain_hue')|float|int) }}{{ '%02x' | format(128 + (states('input_number.curtain_bright')|float|int)) }}"
+  - id: curtain_color_white
+    alias: Curtain white brightness
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: input_number.curtain_white
+    action:
+      - service: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: "0ae20b{{ '%02x' | format(states('input_number.curtain_hue')|float|int) }}{{ '%02x' | format(states('input_number.curtain_white')|float|int) }}"
+  - id: curtain_anim
+    alias: Curtain animation (id + speed + brightness)
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id:
+          - input_number.curtain_anim_id
+          - input_number.curtain_anim_speed
+          - input_number.curtain_anim_bright
+    action:
+      - service: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: "0ae00200{{ '%02x' | format(states('input_number.curtain_anim_id')|float|int) }}{{ '%02x' | format(states('input_number.curtain_anim_speed')|float|int) }}{{ '%02x' | format(states('input_number.curtain_anim_bright')|float|int) }}"
+  - id: curtain_hearts
+    alias: Curtain hearts (dir + speed + brightness)
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id:
+          - input_number.curtain_heart_dir
+          - input_number.curtain_heart_speed
+          - input_number.curtain_heart_bright
+    action:
+      - service: mqtt.publish
+        data:
+          topic: curtain/raw
+          payload: "0ae205020000000000000000001e{{ '%02x' | format(states('input_number.curtain_heart_speed')|float|int) }}{{ '%02x' | format(states('input_number.curtain_heart_bright')|float|int) }}{{ '%02x' | format(states('input_number.curtain_heart_dir')|float|int) }}"

@@ -1,0 +1,11 @@
+# Home Assistant dashboard: Draw studio (iframe)
+# Replace YOUR_SERVER_HOST with the host running draw_server.py.
+title: Draw
+views:
+- title: Draw
+  path: draw
+  panel: true
+  cards:
+  - type: iframe
+    url: http://YOUR_SERVER_HOST:8095/
+    aspect_ratio: 130%

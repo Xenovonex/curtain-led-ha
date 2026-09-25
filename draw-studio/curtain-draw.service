@@ -1,0 +1,15 @@
+[Unit]
+Description=Curtain LED draw studio web server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/curtain-led.env
+WorkingDirectory=/opt/curtain-led/draw-studio
+ExecStart=/opt/curtain-led/draw-studio/venv/bin/python /opt/curtain-led/draw-studio/draw_server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
