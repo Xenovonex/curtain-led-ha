@@ -9,6 +9,38 @@ views:
   - type: markdown
     content: '## Curtain Light Lab'
   - type: entities
+    title: Bluetooth link
+    entities:
+    - entity: switch.curtain_ble_link
+      name: Kiosk BLE link (off = free the light for your phone)
+    - type: divider
+    - entity: switch.curtain_record_ble_log
+      name: Record BLE log (auto-stops after 20 min)
+    - entity: sensor.curtain_ble_log_file
+      name: Capture file
+    - type: divider
+    - entity: input_boolean.curtain_mic
+      name: Mic (sound-reactive) mode
+    - entity: input_text.curtain_mic_cmd_on
+      name: Mic ON payload (hex)
+    - entity: input_text.curtain_mic_cmd_off
+      name: Mic OFF payload (hex)
+    - entity: input_text.curtain_raw
+      name: Raw command (hex)
+  - type: markdown
+    content: >-
+      **Capture the mic/DJ command (no phone logs):** keep **Kiosk BLE link**
+      ON, turn **Record BLE log** on, then run your audio test. If you drive
+      effects from Home Assistant they're captured fully; if you open the phone
+      app it's only captured when the light allows a second connection. The log
+      lands in `CURTAIN_LOG_DIR` on the bridge - decode with
+      `bridge/decode_ble_log.py`. Recording auto-stops after 20 min.
+
+
+      Turn **Kiosk BLE link** off to hand the light to your phone app; back on to
+      resume pairing. Mic mode stays a no-op until its decoded hex is pasted
+      above - see `docs/PROTOCOL.md`.
+  - type: entities
     entities:
     - entity: input_boolean.curtain_power
       name: Power

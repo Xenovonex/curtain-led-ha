@@ -119,8 +119,17 @@ sudo systemctl enable --now curtain-draw       # serves on :8095
 - **Bluetooth bandwidth**: every full-grid repaint is ~10 BLE writes ≈ 0.5–1 s,
   so animations run at roughly **1–2 fps** — smooth slideshow, not fluid video.
 - One BLE central at a time — keep the vendor app closed while the bridge runs.
+  The dashboard's **Kiosk BLE link** switch releases the connection on demand so
+  you can use the phone app (e.g. to capture undecoded commands); flip it back on
+  to resume pairing.
 - Turning the light fully off drops the BLE link; it reconnects when powered on
   again (may take ~30–60 s, or power-cycle if it stops advertising).
+- Sound-reactive **mic mode** isn't decoded yet — its control is scaffolded and
+  stays a no-op until you paste the captured hex (see `docs/PROTOCOL.md`).
+- **Record BLE log** (dashboard switch) captures the bridge's writes + the
+  light's notifications to `CURTAIN_LOG_DIR`, auto-stopping after 20 min; decode
+  with `bridge/decode_ble_log.py`. It sees the phone app only if the light allows
+  a second BLE connection — otherwise use a phone HCI snoop or a hardware sniffer.
 
 ## License
 

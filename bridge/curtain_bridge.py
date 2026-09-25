@@ -12,8 +12,12 @@ Configure via environment variables (see .env.example):
   MQTT_USER      MQTT username                    (default "")
   MQTT_PASS      MQTT password                    (default "")
   CURTAIN_NODE   MQTT/HA node id                  (default "curtain")
+  CURTAIN_LOG_DIR       where "Record BLE log" writes captures  (default ~/curtain-ble-logs)
+  CURTAIN_RECORD_MINUTES  auto-stop for a recording, minutes    (default 20)
 """
-import asyncio, json, colorsys, os, logging
+import asyncio, json, colorsys, os, logging, time
+from datetime import datetime
+from pathlib import Path
 import paho.mqtt.client as mqtt
 from bleak import BleakScanner, BleakClient
 from bleak_retry_connector import establish_connection
@@ -27,14 +31,24 @@ MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 MQTT_USER = os.environ.get("MQTT_USER", "")
 MQTT_PASS = os.environ.get("MQTT_PASS", "")
 NODE = os.environ.get("CURTAIN_NODE", "curtain")
+LOG_DIR = Path(os.environ.get("CURTAIN_LOG_DIR", str(Path.home() / "curtain-ble-logs")))
+RECORD_AUTOSTOP = int(os.environ.get("CURTAIN_RECORD_MINUTES", "20")) * 60
 
 WRITE = "0000ff01-0000-1000-8000-00805f9b34fb"
 NOTIFY = "0000ff02-0000-1000-8000-00805f9b34fb"
 DISCO = f"homeassistant/light/{NODE}/config"
+DISCO_LINK = f"homeassistant/switch/{NODE}_link/config"
+DISCO_REC = f"homeassistant/switch/{NODE}_record/config"
+DISCO_REC_FILE = f"homeassistant/sensor/{NODE}_record_file/config"
 T_CMD = f"{NODE}/set"
 T_STATE = f"{NODE}/state"
 T_AVAIL = f"{NODE}/availability"
 T_RAW = f"{NODE}/raw"
+T_LINK_CMD = f"{NODE}/link/set"      # "ON"/"OFF": hold or release the BLE link
+T_LINK_STATE = f"{NODE}/link/state"
+T_REC_CMD = f"{NODE}/record/set"     # "ON"/"OFF": start/stop a BLE capture
+T_REC_STATE = f"{NODE}/record/state"
+T_REC_FILE = f"{NODE}/record/file"   # current/last capture filename
 
 HANDSHAKE = "0a10141a09180f2a1b04000fc6"
 QUERY = "0aea818a8b59"
@@ -75,14 +89,80 @@ class Light:
         self.q = asyncio.Queue()
         self.client = None
         self.connected = False
+        self.link_enabled = True   # False => release the BLE link so a phone app can connect
         self.proto = Proto()
         self.state = {"state": "OFF", "brightness": 255, "color": {"r": 255, "g": 255, "b": 255}, "effect": None}
         self.mqtt = None
+        # --- BLE capture ("Record BLE log") ---
+        self.rec_fh = None
+        self.rec_path = None
+        self.rec_task = None
+
+    # -------- BLE capture --------
+    def _rec_write(self, direction, raw_bytes):
+        """Append one line to the active capture, if any. Format:
+        <epoch_seconds> <W|N> <hex>  (W = we wrote it, N = notification from light)."""
+        if not self.rec_fh: return
+        try:
+            self.rec_fh.write(f"{time.time():.6f} {direction} {raw_bytes.hex()}\n")
+            self.rec_fh.flush()
+        except Exception as e:
+            log.warning(f"record write failed: {e}")
+
+    def _on_notify(self, _sender, data):
+        # Notifications carry the light's echoed mode/state - the useful signal
+        # when watching what a phone app does (if the light allows a 2nd link).
+        self._rec_write("N", bytes(data))
+
+    def start_record(self):
+        if self.recording: self._rec_publish(); return
+        try:
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            name = f"ble-{datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
+            self.rec_path = LOG_DIR / name
+            self.rec_fh = open(self.rec_path, "w", encoding="ascii")
+            self.rec_fh.write(f"# curtain BLE capture  addr={ADDR}  start={datetime.now().isoformat()}\n")
+            self.rec_fh.write("# fields: <epoch> <W|N> <hex>   frame = 01 seq 80 00 00 len-1 00 len <payload>\n")
+            self.rec_fh.flush()
+            log.info(f"RECORDING BLE to {self.rec_path} (auto-stop in {RECORD_AUTOSTOP//60} min)")
+            self.rec_task = asyncio.get_running_loop().create_task(self._rec_autostop())
+        except Exception as e:
+            log.warning(f"could not start recording: {e}"); self.rec_fh = None; self.rec_path = None
+        self._rec_publish()
+
+    def stop_record(self, reason="manual"):
+        if self.rec_task:
+            self.rec_task.cancel(); self.rec_task = None
+        if self.rec_fh:
+            try:
+                self.rec_fh.write(f"# stopped ({reason}) {datetime.now().isoformat()}\n"); self.rec_fh.close()
+            except Exception: pass
+            log.info(f"stopped BLE recording ({reason}): {self.rec_path}")
+        self.rec_fh = None
+        self._rec_publish()
+
+    async def _rec_autostop(self):
+        try:
+            await asyncio.sleep(RECORD_AUTOSTOP)
+            self.stop_record("auto-stop")
+        except asyncio.CancelledError:
+            pass
+
+    @property
+    def recording(self):
+        return self.rec_fh is not None
+
+    def _rec_publish(self):
+        if not self.mqtt: return
+        self.mqtt.publish(T_REC_STATE, "ON" if self.recording else "OFF", retain=True)
+        self.mqtt.publish(T_REC_FILE, self.rec_path.name if self.rec_path else "none", retain=True)
 
     async def send(self, payload_hex):
         if not (self.client and self.connected): return
         try:
-            await self.client.write_gatt_char(WRITE, self.proto.frame(payload_hex), response=False)
+            frame = self.proto.frame(payload_hex)
+            await self.client.write_gatt_char(WRITE, frame, response=False)
+            self._rec_write("W", frame)
             await asyncio.sleep(0.12)
         except Exception as e:
             log.warning(f"write failed: {e}"); await self._teardown()
@@ -117,9 +197,26 @@ class Light:
         log.info("scan result: %s", "FOUND" if "d" in seen else "not found")
         return seen.get("d")
 
+    async def set_link(self, enabled):
+        """Toggle the BLE link. Off releases the light so a phone app can pair;
+        On resumes the normal scan/connect/handshake loop (see connect_loop)."""
+        enabled = bool(enabled)
+        if enabled != self.link_enabled:
+            self.link_enabled = enabled
+            if enabled:
+                log.info("BLE link ENABLED via switch - resuming connection")
+            else:
+                log.info("BLE link DISABLED via switch - releasing light for phone app")
+                await self._teardown()
+        self._link_state()
+
     async def connect_loop(self):
         backoff = 3
         while True:
+            if not self.link_enabled:
+                if self.connected or self.client:
+                    await self._teardown()
+                await asyncio.sleep(1); continue
             if not self.connected:
                 dev = await self._scan()
                 if not dev:
@@ -130,11 +227,13 @@ class Light:
                     if not await self._ensure_services():
                         raise RuntimeError("services not discovered")
                     self.proto.reset()
-                    try: await self.client.start_notify(NOTIFY, lambda _, d: None)
+                    try: await self.client.start_notify(NOTIFY, self._on_notify)
                     except Exception: pass
                     await asyncio.sleep(0.3)
-                    await self.client.write_gatt_char(WRITE, self.proto.frame(HANDSHAKE), response=False); await asyncio.sleep(0.25)
-                    await self.client.write_gatt_char(WRITE, self.proto.frame(QUERY), response=False)
+                    hs = self.proto.frame(HANDSHAKE)
+                    await self.client.write_gatt_char(WRITE, hs, response=False); self._rec_write("W", hs); await asyncio.sleep(0.25)
+                    qy = self.proto.frame(QUERY)
+                    await self.client.write_gatt_char(WRITE, qy, response=False); self._rec_write("W", qy)
                     self.connected = True; backoff = 3
                     self._avail(True); log.info("CONNECTED to light"); await self._republish()
                 except Exception as e:
@@ -145,7 +244,8 @@ class Light:
             await asyncio.sleep(2)
             if self.connected:
                 try:
-                    await self.client.write_gatt_char(WRITE, self.proto.frame(QUERY), response=False)
+                    ka = self.proto.frame(QUERY)
+                    await self.client.write_gatt_char(WRITE, ka, response=False); self._rec_write("W", ka)
                 except Exception as e:
                     log.warning(f"keepalive lost: {e}"); await self._teardown()
 
@@ -156,6 +256,10 @@ class Light:
             except Exception as e: log.warning(f"apply error: {e}")
 
     async def _apply(self, cmd):
+        if "__record__" in cmd:
+            self.start_record() if cmd["__record__"] else self.stop_record("manual"); return
+        if "__link__" in cmd:
+            await self.set_link(cmd["__link__"]); return
         if "__raw__" in cmd:
             for p in cmd["__raw__"].split(","):
                 p = p.strip()
@@ -179,6 +283,8 @@ class Light:
 
     def _avail(self, up):
         if self.mqtt: self.mqtt.publish(T_AVAIL, "online" if up else "offline", retain=True)
+    def _link_state(self):
+        if self.mqtt: self.mqtt.publish(T_LINK_STATE, "ON" if self.link_enabled else "OFF", retain=True)
     async def _republish(self):
         if self.mqtt: self.mqtt.publish(T_STATE, json.dumps(self.state), retain=True)
 
@@ -197,9 +303,35 @@ def main():
             "device": {"identifiers": [NODE], "name": "Curtain LED", "manufacturer": "Zengge/MagicHome2", "model": "BLE curtain"},
         }
         c.publish(DISCO, json.dumps(disco), retain=True)
-        c.subscribe(T_CMD); c.subscribe(T_RAW)
+        link_sw = {
+            "name": "Curtain BLE Link", "unique_id": f"{NODE}_ble_link",
+            "command_topic": T_LINK_CMD, "state_topic": T_LINK_STATE,
+            "payload_on": "ON", "payload_off": "OFF", "icon": "mdi:bluetooth",
+            "device": {"identifiers": [NODE], "name": "Curtain LED", "manufacturer": "Zengge/MagicHome2", "model": "BLE curtain"},
+        }
+        c.publish(DISCO_LINK, json.dumps(link_sw), retain=True)
+        dev = {"identifiers": [NODE], "name": "Curtain LED", "manufacturer": "Zengge/MagicHome2", "model": "BLE curtain"}
+        rec_sw = {
+            "name": "Curtain Record BLE log", "unique_id": f"{NODE}_ble_record",
+            "command_topic": T_REC_CMD, "state_topic": T_REC_STATE,
+            "payload_on": "ON", "payload_off": "OFF", "icon": "mdi:record-rec", "device": dev,
+        }
+        rec_file = {
+            "name": "Curtain BLE log file", "unique_id": f"{NODE}_ble_record_file",
+            "state_topic": T_REC_FILE, "icon": "mdi:file-document-outline", "device": dev,
+        }
+        c.publish(DISCO_REC, json.dumps(rec_sw), retain=True)
+        c.publish(DISCO_REC_FILE, json.dumps(rec_file), retain=True)
+        c.subscribe(T_CMD); c.subscribe(T_RAW); c.subscribe(T_LINK_CMD); c.subscribe(T_REC_CMD)
+        light._link_state(); light._rec_publish()
 
     def on_message(c, u, msg):
+        if msg.topic == T_REC_CMD:
+            on = msg.payload.decode().strip().upper() in ("ON", "1", "TRUE")
+            loop.call_soon_threadsafe(light.q.put_nowait, {"__record__": on}); return
+        if msg.topic == T_LINK_CMD:
+            on = msg.payload.decode().strip().upper() in ("ON", "1", "TRUE")
+            loop.call_soon_threadsafe(light.q.put_nowait, {"__link__": on}); return
         if msg.topic == T_RAW:
             loop.call_soon_threadsafe(light.q.put_nowait, {"__raw__": msg.payload.decode().strip()}); return
         try: cmd = json.loads(msg.payload.decode())

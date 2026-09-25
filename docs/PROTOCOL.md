@@ -71,3 +71,59 @@ is what this project uses.
 
 Responses arrive on `0xFF02` with the same header (byte0 `0x05`) and a payload
 starting `0x15`, echoing the command and current state (mode, brightness, color).
+
+## Sound / microphone mode (not yet decoded)
+
+The light has a built-in microphone "DJ" mode that animates colour/brightness by
+how loud the room is. Its BLE command is **not captured yet**. Analysis of the
+available Android HCI snoop logs (`btsnoop_hci.log` inside the vendor-app bug
+reports) showed only colour tests and pixel-drawing sessions on the plaintext
+write handle (`0xFF01`) — no mic command. Note the vendor app also opens an
+**encrypted channel** (a separate GATT handle carrying `a9fe…` blocks); if the
+mic toggle is sent there rather than on `0xFF01`, it can't be read from a snoop
+without the session keys — so prefer confirming it appears on `0xFF01`.
+
+### Capturing it — option A: this bridge's recorder (no phone logs)
+
+The dashboard has a **Record BLE log** switch. It logs every frame the bridge
+writes **and** every notification the light sends, to a text file in
+`CURTAIN_LOG_DIR` (default `~/curtain-ble-logs`), and auto-stops after 20 min
+(`CURTAIN_RECORD_MINUTES`).
+
+1. Keep **Kiosk BLE link** ON so the bridge stays connected.
+2. Turn **Record BLE log** on.
+3. Run the audio test. Driving effects from Home Assistant is captured fully.
+   Opening the vendor app *may* also be captured — but only if the light accepts
+   a second BLE connection while the bridge holds one; most of these allow only
+   one central, in which case the app can't connect and you need option B.
+4. Turn recording off (or let it auto-stop) and decode:
+   `python bridge/decode_ble_log.py ~/curtain-ble-logs/ble-*.log`.
+   Lines flagged `??? UNKNOWN` are candidate new commands.
+
+### Capturing it — option B: phone HCI snoop (sees the app for sure)
+
+1. Turn the **Kiosk BLE link** switch **off** so the bridge releases the light.
+2. On Android, enable *Developer options → Bluetooth HCI snoop log* (toggle
+   Bluetooth off/on so logging starts fresh).
+3. Open the vendor app, connect, and turn the microphone / music mode on and off
+   a couple of times. Keep it brief so the command is easy to find.
+4. Pull the log (`adb bugreport` or Developer options → *Take bug report*) and
+   find `FS/data/log/bt/btsnoop_hci.log`.
+5. Decode: look for **write commands** (ATT opcode `0x52`) to handle `0xFF01`
+   whose value starts `01 <seq> 80 00 00 <len-1> 00 <len>`; strip that 8-byte
+   header. Any opcode outside the known set (`71` power, `e0 02` animation,
+   `e2 0b` colour, `e2 06` draw, `ea …` bulk upload) is a candidate.
+
+For a true passive capture of the phone↔light link without either compromise, a
+dedicated BLE sniffer (e.g. nRF52840 + nRF Sniffer, or Ubertooth) is required —
+a normal host adapter can't see another device's connection.
+
+### Plugging in the result
+
+Put the decoded payload hex (without the transport header — the bridge adds it)
+into **Mic ON payload / Mic OFF payload** on the dashboard, or `curtain/raw`.
+
+Until then, the dashboard's **Mic mode** toggle and payload boxes are wired up
+but send nothing (the automation no-ops on an empty payload), so the control is
+harmless. The **Raw command (hex)** box publishes any payload to `curtain/raw`
+for live testing while you decode.
