@@ -11,6 +11,20 @@ Assistant integration. This project reverse-engineers the BLE protocol (see
 
 > Works with a 20×20 (400-LED) curtain. Other sizes: set `GRID_W`/`GRID_H`.
 
+## Preview
+
+The built-in pattern library (simulated 20×20 previews):
+
+![Pattern library](docs/media/library.png)
+
+Cycling patterns &nbsp;·&nbsp; scrolling animation (both rendered from the actual grid data the curtain receives):
+
+<p>
+<img src="docs/media/demo.gif" width="240" alt="Cycling patterns">
+&nbsp;
+<img src="docs/media/scroll.gif" width="240" alt="Scrolling flag">
+</p>
+
 ## What you get
 
 - A normal Home Assistant **light** entity (on/off, brightness, RGB, effects).
@@ -107,6 +121,12 @@ sudo systemctl enable --now curtain-draw       # serves on :8095
 - One BLE central at a time — keep the vendor app closed while the bridge runs.
 - Turning the light fully off drops the BLE link; it reconnects when powered on
   again (may take ~30–60 s, or power-cycle if it stops advertising).
+
+## License
+
+Original code, MIT licensed — see [`LICENSE`](LICENSE). A few library sprites
+depict third-party characters (fan art, personal use); national flags are public
+domain — details in [`NOTICE.md`](NOTICE.md).
 
 ## Disclaimer
 
