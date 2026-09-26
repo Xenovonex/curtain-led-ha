@@ -1,27 +1,15 @@
 # Package: SurpLife curtain light control helpers
+#
+# Sound-reactive ("DJ") mode is handled by the BRIDGE, not this package: it is a
+# live e2 0a spectrum stream from a mic, not a static frame (see docs/PROTOCOL.md).
+# The bridge exposes it as switch.curtain_sound_reactive_mic via MQTT discovery
+# when CURTAIN_MIC_PCM is set - no helper here needed.
 input_boolean:
   curtain_power:
     name: Power
     icon: mdi:power
-  curtain_mic:
-    # Sound-reactive / "DJ" mode (device built-in microphone).
-    # The BLE command is not decoded yet, so this only sends something once you
-    # paste the captured hex into input_text.curtain_mic_cmd_on / _off below.
-    # See docs/PROTOCOL.md -> "Sound / microphone mode" for how to capture it.
-    name: Mic (sound-reactive) mode
-    icon: mdi:microphone
 
 input_text:
-  # Paste decoded hex payloads here (comma-separate multiple frames, no spaces).
-  # Empty = nothing is sent, so an un-decoded control is a harmless no-op.
-  curtain_mic_cmd_on:
-    name: Mic mode ON payload (hex)
-    max: 255
-    icon: mdi:microphone-settings
-  curtain_mic_cmd_off:
-    name: Mic mode OFF payload (hex)
-    max: 255
-    icon: mdi:microphone-off
   curtain_raw:
     name: Raw command (hex)
     max: 255
@@ -151,25 +139,6 @@ automation:
         data:
           topic: curtain/raw
           payload: "0ae00200{{ '%02x' | format(states('input_number.curtain_anim_id')|float|int) }}{{ '%02x' | format(states('input_number.curtain_anim_speed')|float|int) }}{{ '%02x' | format(states('input_number.curtain_anim_bright')|float|int) }}"
-  - id: curtain_mic_toggle
-    alias: Curtain mic / sound-reactive mode
-    mode: restart
-    trigger:
-      - platform: state
-        entity_id: input_boolean.curtain_mic
-    # Only publishes if you have pasted a decoded payload into the matching
-    # input_text; otherwise it does nothing (safe until the command is known).
-    condition:
-      - condition: template
-        value_template: >-
-          {% set p = states('input_text.curtain_mic_cmd_on') if is_state('input_boolean.curtain_mic','on') else states('input_text.curtain_mic_cmd_off') %}
-          {{ p not in ['', 'unknown', 'unavailable'] }}
-    action:
-      - service: mqtt.publish
-        data:
-          topic: curtain/raw
-          payload: >-
-            {{ states('input_text.curtain_mic_cmd_on') if is_state('input_boolean.curtain_mic','on') else states('input_text.curtain_mic_cmd_off') }}
   - id: curtain_raw_send
     alias: Curtain raw command passthrough
     mode: restart

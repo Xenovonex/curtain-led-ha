@@ -45,7 +45,9 @@ Total length = `8 + payloadLen`.
 | Brightness | `0a e0 02 00 02 <v> 50` | `v` 0x00–0x64 |
 | Built-in animation | `0a e0 02 00 <id> <speed> <bright>` | `id` 1–17 (rainbow wave, purple wave, fades, …), `speed`/`bright` 0x00–0x64 |
 | Hearts animation | `0a e2 05 02 00×9 1e <speed> <C> <dir>` | `dir`: 00 in-place, 02 ←, 03 →, 04 ↑, 05 ↓; `C` = brightness |
-| Effect palette | `0a e1 05 00 <speed> 01 <dir> <n> 64 …pad… a1 00 00 00 <n> [a1 <hue> 64 64]×n` | color-cycle with a palette |
+| Sound style / palette | `0a e1 05 00 50 <style> 00 00 <sens> …pad… a1 00 00 00 <n> [a1 <hue> 64 64]×n` | selects a sound-reactive animation. `style` byte: only `1,2,3,4,7,8,12,13` render; `sens` (byte 9, 0x00–0x64) = the app's "sensitivity" |
+| Sound spectrum frame | `0a e2 0a <b0..b19>` | 20 spectrum-band heights (`0x00`–`0x64`) — drives sound styles **1–4**. **Streamed** ~8–10×/s |
+| Sound level frame | `0a e1 07 <level>` | single overall level (`0x00`–`0x64`) — drives sound styles **5+** (e.g. 7,8,12,13). **Streamed** ~8–10×/s |
 
 ### Pixel drawing (the important one)
 
@@ -72,58 +74,81 @@ is what this project uses.
 Responses arrive on `0xFF02` with the same header (byte0 `0x05`) and a payload
 starting `0x15`, echoing the command and current state (mode, brightness, color).
 
-## Sound / microphone mode (not yet decoded)
+## Sound / microphone mode (decoded)
 
-The light has a built-in microphone "DJ" mode that animates colour/brightness by
-how loud the room is. Its BLE command is **not captured yet**. Analysis of the
-available Android HCI snoop logs (`btsnoop_hci.log` inside the vendor-app bug
-reports) showed only colour tests and pixel-drawing sessions on the plaintext
-write handle (`0xFF01`) — no mic command. Note the vendor app also opens an
-**encrypted channel** (a separate GATT handle carrying `a9fe…` blocks); if the
-mic toggle is sent there rather than on `0xFF01`, it can't be read from a snoop
-without the session keys — so prefer confirming it appears on `0xFF01`.
+The vendor "DJ" / sound mode is **not a single command — it is a live stream**.
+Decoded from an Android HCI snoop of the app (`btsnoop_hci.log`) and confirmed on
+hardware (2026-09-25):
 
-### Capturing it — option A: this bridge's recorder (no phone logs)
+- App writes go to handle `0xFF01`; the `15 e1 06 …` / `16 ea 81 …` frames seen on
+  `0xFF02` are the light's **notification replies**, not commands — don't confuse
+  the two when reading a snoop.
+- The animation is chosen with an `0a e1 05 …` frame (`style` byte + palette +
+  `sens` sensitivity byte). Only style bytes **1,2,3,4,7,8,12,13** render; the app
+  never uses the others.
+- The reactivity is then fed **from the phone mic** as a live stream (~8–10 fps),
+  and the *stream format depends on the style*:
+  - **Styles 1–4** → `0a e2 0a` + **20 bytes** (a 20-band FFT spectrum → "bars").
+  - **Styles 5+** → `0a e1 07 <level>` (a single overall level → "glitter"/level).
+- `sens` (byte 9 of `e1 05`) is the app's sensitivity slider. When you stream the
+  data yourself it has little effect (the light just shows what you send), so this
+  project applies sensitivity in its own DSP instead.
+- `0a e2 31` is a generic init/status query (it appears once in *every* session,
+  sound or not) — it is **not** a sound-mode enable. The light has no standalone
+  "use its own built-in mic" mode reachable by a single command.
+- Sending a single `e2 0a`/`e1 07` frame just **freezes** the panel on that frame.
+  Replaying the captured stream at its original timing reproduces the exact bars
+  from the sounds made during capture — proving it must be streamed live.
 
-The dashboard has a **Record BLE log** switch. It logs every frame the bridge
-writes **and** every notification the light sends, to a text file in
-`CURTAIN_LOG_DIR` (default `~/curtain-ble-logs`), and auto-stops after 20 min
-(`CURTAIN_RECORD_MINUTES`).
+### Reproducing it: `CURTAIN_MIC_PCM` (local mic → `e2 0a` stream)
 
-1. Keep **Kiosk BLE link** ON so the bridge stays connected.
-2. Turn **Record BLE log** on.
-3. Run the audio test. Driving effects from Home Assistant is captured fully.
-   Opening the vendor app *may* also be captured — but only if the light accepts
-   a second BLE connection while the bridge holds one; most of these allow only
-   one central, in which case the app can't connect and you need option B.
-4. Turn recording off (or let it auto-stop) and decode:
-   `python bridge/decode_ble_log.py ~/curtain-ble-logs/ble-*.log`.
-   Lines flagged `??? UNKNOWN` are candidate new commands.
+Because sound mode is a stream, the bridge generates it from a local capture
+device rather than replaying a fixed payload. Set `CURTAIN_MIC_PCM` to an ALSA
+capture device; the bridge then exposes (via MQTT discovery):
 
-### Capturing it — option B: phone HCI snoop (sees the app for sure)
+- **Curtain Sound Reactive (mic)** switch — turns the mode on/off.
+- **Curtain Sound Animation** select — the working styles (1,2,3,4,7,8,12,13). The
+  bridge sends the matching `e1 05` frame and streams the right format per style:
+  `e2 0a` (spectrum) for 1–4, `e1 07` (level) for the rest.
+- **Curtain Sound Sensitivity** number (0–100) — applied in the bridge's DSP
+  (>50 amplifies so quieter sound reacts, <50 raises a threshold).
+- **Test All Sound Styles** button — steps bytes 1–15 (10 s each) to re-verify.
 
-1. Turn the **Kiosk BLE link** switch **off** so the bridge releases the light.
-2. On Android, enable *Developer options → Bluetooth HCI snoop log* (toggle
-   Bluetooth off/on so logging starts fresh).
-3. Open the vendor app, connect, and turn the microphone / music mode on and off
-   a couple of times. Keep it brief so the command is easy to find.
-4. Pull the log (`adb bugreport` or Developer options → *Take bug report*) and
-   find `FS/data/log/bt/btsnoop_hci.log`.
-5. Decode: look for **write commands** (ATT opcode `0x52`) to handle `0xFF01`
-   whose value starts `01 <seq> 80 00 00 <len-1> 00 <len>`; strip that 8-byte
-   header. Any opcode outside the known set (`71` power, `e0 02` animation,
-   `e2 0b` colour, `e2 06` draw, `ea …` bulk upload) is a candidate.
+While on it captures audio, computes a 20-band log-spaced FFT (per-band running
+noise-floor subtraction + AGC + attack/decay smoothing), and streams at ~8 fps
+(one read == one ALSA period so delivery is smooth). Turning it off re-asserts a
+normal effect so the panel isn't left on the last frame. Keep any such stream
+light — large/fast frames saturate this light's BLE link and drop the connection.
 
-For a true passive capture of the phone↔light link without either compromise, a
-dedicated BLE sniffer (e.g. nRF52840 + nRF Sniffer, or Ubertooth) is required —
-a normal host adapter can't see another device's connection.
+### Disco heart + smoke test
 
-### Plugging in the result
+The bridge also exposes a **Curtain Disco Heart** switch (pixel-draws a heart via
+`e2 06` and re-draws it ~1.5 fps with a rotating hue for a colour-cycling heart)
+and a **Curtain Smoke Test** button (runs colours → animation → disco heart →
+sound bars → scroll through the whole feature set for a quick camera check).
 
-Put the decoded payload hex (without the transport header — the bridge adds it)
-into **Mic ON payload / Mic OFF payload** on the dashboard, or `curtain/raw`.
+If the mic is shared with another consumer (e.g. a Wyoming voice satellite that
+holds the USB mic), point `CURTAIN_MIC_PCM` at an ALSA **dsnoop** PCM so both can
+read it. dsnoop runs at the mic's native rate; set `CURTAIN_MIC_RATE` to match
+(e.g. `48000`) and let each client `plug` down. Example `~/.asoundrc`:
 
-Until then, the dashboard's **Mic mode** toggle and payload boxes are wired up
-but send nothing (the automation no-ops on an empty payload), so the control is
-harmless. The **Raw command (hex)** box publishes any payload to `curtain/raw`
-for live testing while you decode.
+```
+pcm.dsnoop_mic {
+    type dsnoop
+    ipc_key 2048
+    ipc_key_add_uid true
+    slave { pcm "hw:2,0"; channels 1; rate 48000; format S16_LE
+            period_size 6000; buffer_size 24000 }
+}
+pcm.mic_shared { type plug; slave.pcm "dsnoop_mic" }
+```
+
+### Capturing more app behaviour (recorder / phone snoop)
+
+The dashboard's **Record BLE log** switch logs every frame the bridge writes and
+every notification, to `CURTAIN_LOG_DIR` (auto-stops after `CURTAIN_RECORD_MINUTES`);
+decode with `python bridge/decode_ble_log.py`. Because these lights are
+single-central, the bridge can't capture the phone app while connected — for that,
+release the **Kiosk BLE link** and take an Android HCI snoop
+(`FS/data/log/bt/btsnoop_hci.log`), then strip the 8-byte transport header
+(`01 <seq> 80 00 00 <len-1> 00 <len>`) from writes to `0xFF01`.
